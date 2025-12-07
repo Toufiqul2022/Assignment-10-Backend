@@ -88,6 +88,18 @@ async function run() {
       const result = await petServices.deleteOne(query);
       res.send(result);
     });
+    // order
+    app.post("/orders", async (req, res) => {
+      const data = req.body;
+      console.log(data);
+      const result = await updateOrder.insertOne(data);
+      res.send(result);
+    });
+    // order get
+    app.get("/orders", async (req, res) => {
+      const result = await updateOrder.find().toArray();
+      res.send(result);
+    });
     
 
     // await client.db("admin").command({ ping: 1 });
