@@ -127,7 +127,21 @@ async function run() {
       }
     });
 
-    
+    // Recent 6 listings
+    app.get("/recent-services", async (req, res) => {
+      try {
+        const result = await petServices
+          .find()
+          .sort({ _id: -1 })
+          .limit(6)
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+        res.status(500).send("Server error");
+      }
+    });
 
     // await client.db("admin").command({ ping: 1 });
     console.log(
