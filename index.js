@@ -37,7 +37,27 @@ async function run() {
       res.send(result);
     });
 
-    
+    // data get form db
+
+    app.get("/services", async (req, res) => {
+      const { category } = req.query;
+      const quary = {};
+      if (category) {
+        quary.category = category;
+      }
+      const result = await petServices.find(quary).toArray();
+      res.send(result);
+    });
+
+    // data for details
+
+    app.get("/services/:id", async (req, res) => {
+      const id = req.params;
+      const quary = { _id: new ObjectId(id) };
+      const result = await petServices.findOne(quary);
+      res.send(result);
+    });
+
 
     // await client.db("admin").command({ ping: 1 });
     console.log(
