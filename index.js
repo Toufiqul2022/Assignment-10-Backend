@@ -100,6 +100,33 @@ async function run() {
       const result = await updateOrder.find().toArray();
       res.send(result);
     });
+    // category wise services
+    app.get("/category/:categoryName", async (req, res) => {
+      const { categoryName } = req.params;
+
+      // Map URL slug to MongoDB category
+      const categoryMap = {
+        "Pets-adoption": "Pets",
+        "Pet-food": "Food",
+        Accessories: "accessories",
+        "Pet-care-products": "Pet Care Products",
+      };
+
+      const dbCategory = categoryMap[categoryName];
+
+      if (!dbCategory) return res.status(404).send("Category not found");
+
+      try {
+        const result = await petServices
+          .find({ category: dbCategory })
+          .toArray();
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send("Server error");
+      }
+    });
+
     
 
     // await client.db("admin").command({ ping: 1 });
