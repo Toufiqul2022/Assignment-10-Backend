@@ -58,6 +58,30 @@ async function run() {
       res.send(result);
     });
 
+    // My services code
+    app.get("/my-services", async (req, res) => {
+      const { email } = req.query;
+      const quary = { email: email };
+      const result = await petServices.find(quary).toArray();
+      res.send(result);
+    });
+
+    // Update
+    app.put("/update/:id", async (req, res) => {
+      const data = req.body;
+      const { id } = req.params;
+
+      const query = { _id: new ObjectId(id) };
+
+      const updateServices = {
+        $set: data,
+      };
+
+      const result = await petServices.updateOne(query, updateServices);
+      res.send(result);
+    });
+
+    
 
     // await client.db("admin").command({ ping: 1 });
     console.log(
