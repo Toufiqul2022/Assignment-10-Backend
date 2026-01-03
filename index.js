@@ -133,7 +133,7 @@ async function run() {
         const result = await petServices
           .find()
           .sort({ _id: -1 })
-          .limit(6)
+          .limit(8)
           .toArray();
 
         res.send(result);
