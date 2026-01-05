@@ -2,14 +2,19 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const port = 3000;
 
+const port = process.env.PORT || 3000;
 const app = express();
-app.use(cors());
+
+app.use(
+  cors({
+    origin: "*",
+    credentials: false,
+  })
+);
 app.use(express.json());
 
-const uri =
-  `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.mnfzzab.mongodb.net/?appName=Cluster0`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.mnfzzab.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -19,92 +24,183 @@ const client = new MongoClient(uri, {
   },
 });
 
-
 async function run() {
   try {
-    // await client.connect();
+    await client.connect();
+    console.log("MongoDB connected");
 
     const database = client.db("petServices");
-    const petServices = database.collection("Services");
-    const updateOrder = database.collection("orders");
-    // data post in db
+    const servicesCollection = database.collection("Services");
+    const ordersCollection = database.collection("orders");
+    const usersCollection = database.collection("users");
+
+    await usersCollection.createIndex({ email: 1 }, { unique: true });
+
+    /* USERS */
+
+    app.post("/users", async (req, res) => {
+      try {
+        const { name, email, photoURL } = req.body;
+        if (!email)
+          return res.status(400).send({ message: "Email is required" });
+
+        const filter = { email };
+        const updateDoc = {
+          $set: {
+            name: name || "",
+            email,
+            photoURL: photoURL || "",
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            role: "user",
+            createdAt: new Date(),
+          },
+        };
+
+        const result = await usersCollection.updateOne(filter, updateDoc, {
+          upsert: true,
+        });
+
+        res.send({
+          acknowledged: result.acknowledged,
+          upsertedId: result.upsertedId || null,
+          message: result.upsertedId ? "User created" : "User updated",
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server error" });
+      }
+    });
+
+    // Get all users
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+
+    // Get single user by email
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send(user);
+    });
+
+    // Admin check (Option A: you manually set role=admin in Atlas)
+    app.get("/users/admin/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send({ admin: user?.role === "admin" });
+    });
+
+    /* SERVICES (LISTINGS) */
+
+    // Add listing
     app.post("/services", async (req, res) => {
       const data = req.body;
-      const date = new Date();
-      data.createAt = date;
-      console.log(data);
-      const result = await petServices.insertOne(data);
+
+      if (!data?.email) {
+        return res
+          .status(400)
+          .send({ message: "email is required for listing" });
+      }
+
+      data.createdAt = new Date();
+      const result = await servicesCollection.insertOne(data);
       res.send(result);
     });
 
-    // data get form db
-
+    // Get all services (admin use) (optional category filter)
     app.get("/services", async (req, res) => {
       const { category } = req.query;
-      const quary = {};
-      if (category) {
-        quary.category = category;
-      }
-      const result = await petServices.find(quary).toArray();
+      const query = category ? { category } : {};
+      const result = await servicesCollection.find(query).toArray();
       res.send(result);
     });
 
-    // data for details
-
+    // Get service by ID
     app.get("/services/:id", async (req, res) => {
-      const id = req.params;
-      const quary = { _id: new ObjectId(id) };
-      const result = await petServices.findOne(quary);
+      const { id } = req.params;
+      const result = await servicesCollection.findOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
-    // My services code
+    // My listings
     app.get("/my-services", async (req, res) => {
       const { email } = req.query;
-      const quary = { email: email };
-      const result = await petServices.find(quary).toArray();
+      if (!email)
+        return res.status(400).send({ message: "email query required" });
+
+      const result = await servicesCollection.find({ email }).toArray();
       res.send(result);
     });
 
-    // Update
+    // Update listing
     app.put("/update/:id", async (req, res) => {
-      const data = req.body;
       const { id } = req.params;
-
-      const query = { _id: new ObjectId(id) };
-
-      const updateServices = {
-        $set: data,
-      };
-
-      const result = await petServices.updateOne(query, updateServices);
+      const data = req.body;
+      const result = await servicesCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: data }
+      );
       res.send(result);
     });
 
-    // Delete
+    // Delete listing
     app.delete("/delete/:id", async (req, res) => {
       const { id } = req.params;
-      const query = { _id: new ObjectId(id) };
-      const result = await petServices.deleteOne(query);
+      const result = await servicesCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
-    // order
+
+    /* ORDERS */
+
+    // Create order
     app.post("/orders", async (req, res) => {
       const data = req.body;
-      console.log(data);
-      const result = await updateOrder.insertOne(data);
+
+      // Backward compatibility (if frontend still sends email)
+      if (!data.buyerEmail && data.email) {
+        data.buyerEmail = data.email;
+        delete data.email;
+      }
+
+      if (!data?.buyerEmail) {
+        return res.status(400).send({ message: "buyerEmail is required" });
+      }
+
+      data.createdAt = new Date();
+      const result = await ordersCollection.insertOne(data);
       res.send(result);
     });
-    // order get
+
+    // All orders (admin use)
     app.get("/orders", async (req, res) => {
-      const result = await updateOrder.find().toArray();
+      const result = await ordersCollection.find().toArray();
       res.send(result);
     });
-    // category wise services
+
+    // My orders (user use)
+    app.get("/my-orders", async (req, res) => {
+      const { email } = req.query;
+      if (!email)
+        return res.status(400).send({ message: "email query required" });
+
+      const result = await ordersCollection
+        .find({ buyerEmail: email })
+        .toArray();
+      res.send(result);
+    });
+
+    /* CATEGORY ROUTES */
+
     app.get("/category/:categoryName", async (req, res) => {
       const { categoryName } = req.params;
 
-      // Map URL slug to MongoDB category
       const categoryMap = {
         "Pets-adoption": "Pets",
         "Pet-food": "Food",
@@ -113,50 +209,38 @@ async function run() {
       };
 
       const dbCategory = categoryMap[categoryName];
-
-      if (!dbCategory) return res.status(404).send("Category not found");
-
-      try {
-        const result = await petServices
-          .find({ category: dbCategory })
-          .toArray();
-        res.send(result);
-      } catch (err) {
-        console.error(err);
-        res.status(500).send("Server error");
+      if (!dbCategory) {
+        return res.status(404).send({ message: "Category not found" });
       }
+
+      const result = await servicesCollection
+        .find({ category: dbCategory })
+        .toArray();
+      res.send(result);
     });
 
-    // Recent 6 listings
+    /* RECENT SERVICES */
+
     app.get("/recent-services", async (req, res) => {
-      try {
-        const result = await petServices
-          .find()
-          .sort({ _id: -1 })
-          .limit(8)
-          .toArray();
-
-        res.send(result);
-      } catch (error) {
-        console.log(error);
-        res.status(500).send("Server error");
-      }
+      const result = await servicesCollection
+        .find()
+        .sort({ _id: -1 })
+        .limit(8)
+        .toArray();
+      res.send(result);
     });
-
-    // await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-  } finally {
-    // await client.close();
+  } catch (err) {
+    console.error(" MongoDB error:", err);
   }
 }
+
 run().catch(console.dir);
 
+/*  ROOT */
 app.get("/", (req, res) => {
-  res.send("hello I am Toufiqul");
+  res.send("Server Running 🚀");
 });
 
 app.listen(port, () => {
-  console.log(`server is running on ${port}`);
+  console.log(`✅ Server running on port ${port}`);
 });
