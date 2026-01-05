@@ -26,7 +26,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log("MongoDB connected");
 
     const database = client.db("petServices");
@@ -229,8 +229,11 @@ async function run() {
         .toArray();
       res.send(result);
     });
+    // await client.db("admin").command({ ping: 1 });
   } catch (err) {
     console.error(" MongoDB error:", err);
+  } finally {
+    // await client.close();
   }
 }
 
